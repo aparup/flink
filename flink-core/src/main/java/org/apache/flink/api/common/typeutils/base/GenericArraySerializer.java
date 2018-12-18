@@ -18,20 +18,20 @@
 
 package org.apache.flink.api.common.typeutils.base;
 
-import java.io.IOException;
-import java.lang.reflect.Array;
-
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.core.memory.DataOutputView;
+
+import java.io.IOException;
+import java.lang.reflect.Array;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
  * A serializer for arrays of objects.
  * 
- * @param <C> The component type
+ * @param <C> The component type.
  */
 @Internal
 public final class GenericArraySerializer<C> extends TypeSerializer<C[]> {
@@ -48,6 +48,14 @@ public final class GenericArraySerializer<C> extends TypeSerializer<C[]> {
 	public GenericArraySerializer(Class<C> componentClass, TypeSerializer<C> componentSerializer) {
 		this.componentClass = checkNotNull(componentClass);
 		this.componentSerializer = checkNotNull(componentSerializer);
+	}
+
+	public Class<C> getComponentClass() {
+		return componentClass;
+	}
+
+	public TypeSerializer<C> getComponentSerializer() {
+		return componentSerializer;
 	}
 
 	@Override
@@ -185,5 +193,14 @@ public final class GenericArraySerializer<C> extends TypeSerializer<C[]> {
 	@Override
 	public String toString() {
 		return "Serializer " + componentClass.getName() + "[]";
+	}
+
+	// --------------------------------------------------------------------------------------------
+	// Serializer configuration snapshotting & compatibility
+	// --------------------------------------------------------------------------------------------
+
+	@Override
+	public GenericArraySerializerConfigSnapshot<C> snapshotConfiguration() {
+		return new GenericArraySerializerConfigSnapshot<>(this);
 	}
 }

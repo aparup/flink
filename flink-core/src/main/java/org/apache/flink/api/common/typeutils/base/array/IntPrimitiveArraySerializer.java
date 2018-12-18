@@ -21,6 +21,8 @@ package org.apache.flink.api.common.typeutils.base.array;
 import java.io.IOException;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.common.typeutils.SimpleTypeSerializerSnapshot;
+import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.base.TypeSerializerSingleton;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.core.memory.DataOutputView;
@@ -36,8 +38,7 @@ public class IntPrimitiveArraySerializer extends TypeSerializerSingleton<int[]>{
 	private static final int[] EMPTY = new int[0];
 
 	public static final IntPrimitiveArraySerializer INSTANCE = new IntPrimitiveArraySerializer();
-	
-	
+
 	@Override
 	public boolean isImmutableType() {
 		return false;
@@ -106,5 +107,22 @@ public class IntPrimitiveArraySerializer extends TypeSerializerSingleton<int[]>{
 	@Override
 	public boolean canEqual(Object obj) {
 		return obj instanceof IntPrimitiveArraySerializer;
+	}
+
+	@Override
+	public TypeSerializerSnapshot<int[]> snapshotConfiguration() {
+		return new IntPrimitiveArraySerializerSnapshot();
+	}
+
+	// ------------------------------------------------------------------------
+
+	/**
+	 * Serializer configuration snapshot for compatibility and format evolution.
+	 */
+	public static final class IntPrimitiveArraySerializerSnapshot extends SimpleTypeSerializerSnapshot<int[]> {
+
+		public IntPrimitiveArraySerializerSnapshot() {
+			super(IntPrimitiveArraySerializer.class);
+		}
 	}
 }

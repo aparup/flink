@@ -20,6 +20,8 @@ package org.apache.flink.api.common.typeutils.base;
 
 import java.sql.Date;
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.common.typeutils.SimpleTypeSerializerSnapshot;
+import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.core.memory.DataOutputView;
 
@@ -101,5 +103,22 @@ public final class SqlDateSerializer extends TypeSerializerSingleton<Date> {
 	@Override
 	public boolean canEqual(Object obj) {
 		return obj instanceof SqlDateSerializer;
+	}
+
+	@Override
+	public TypeSerializerSnapshot<Date> snapshotConfiguration() {
+		return new SqlDateSerializerSnapshot();
+	}
+
+	// ------------------------------------------------------------------------
+
+	/**
+	 * Serializer configuration snapshot for compatibility and format evolution.
+	 */
+	public static final class SqlDateSerializerSnapshot extends SimpleTypeSerializerSnapshot<Date> {
+
+		public SqlDateSerializerSnapshot() {
+			super(SqlDateSerializer.class);
+		}
 	}
 }

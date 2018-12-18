@@ -19,25 +19,32 @@
 package org.apache.flink.api.common.restartstrategy;
 
 import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.api.common.time.Time;
 
 import java.io.Serializable;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 /**
  * This class defines methods to generate RestartStrategyConfigurations. These configurations are
  * used to create RestartStrategies at runtime.
  *
- * The RestartStrategyConfigurations are used to decouple the core module from the runtime module.
+ * <p>The RestartStrategyConfigurations are used to decouple the core module from the runtime module.
  */
 @PublicEvolving
 public class RestartStrategies {
 
 	/**
-	 * Generates NoRestartStrategyConfiguration
+	 * Generates NoRestartStrategyConfiguration.
 	 *
 	 * @return NoRestartStrategyConfiguration
 	 */
 	public static RestartStrategyConfiguration noRestart() {
 		return new NoRestartStrategyConfiguration();
+	}
+
+	public static RestartStrategyConfiguration fallBackRestart() {
+		return new FallbackRestartStrategyConfiguration();
 	}
 
 	/**
@@ -47,57 +54,101 @@ public class RestartStrategies {
 	 * @param delayBetweenAttempts Delay in-between restart attempts for the FixedDelayRestartStrategy
 	 * @return FixedDelayRestartStrategy
 	 */
-	public static RestartStrategyConfiguration fixedDelayRestart(
-		int restartAttempts,
-		long delayBetweenAttempts) {
-
-		return new FixedDelayRestartStrategyConfiguration(restartAttempts, delayBetweenAttempts);
+	public static RestartStrategyConfiguration fixedDelayRestart(int restartAttempts, long delayBetweenAttempts) {
+		return fixedDelayRestart(restartAttempts, Time.of(delayBetweenAttempts, TimeUnit.MILLISECONDS));
 	}
 
+	/**
+	 * Generates a FixedDelayRestartStrategyConfiguration.
+	 *
+	 * @param restartAttempts Number of restart attempts for the FixedDelayRestartStrategy
+	 * @param delayInterval Delay in-between restart attempts for the FixedDelayRestartStrategy
+	 * @return FixedDelayRestartStrategy
+	 */
+	public static RestartStrategyConfiguration fixedDelayRestart(int restartAttempts, Time delayInterval) {
+		return new FixedDelayRestartStrategyConfiguration(restartAttempts, delayInterval);
+	}
+
+	/**
+	 * Generates a FailureRateRestartStrategyConfiguration.
+	 *
+	 * @param failureRate Maximum number of restarts in given interval {@code failureInterval} before failing a job
+	 * @param failureInterval Time interval for failures
+	 * @param delayInterval Delay in-between restart attempts
+	 */
+	public static FailureRateRestartStrategyConfiguration failureRateRestart(
+			int failureRate, Time failureInterval, Time delayInterval) {
+		return new FailureRateRestartStrategyConfiguration(failureRate, failureInterval, delayInterval);
+	}
+
+	/**
+	 * Abstract configuration for restart strategies.
+	 */
 	public abstract static class RestartStrategyConfiguration implements Serializable {
 		private static final long serialVersionUID = 6285853591578313960L;
 
 		private RestartStrategyConfiguration() {}
 
 		/**
-		 * Returns a description which is shown in the web interface
+		 * Returns a description which is shown in the web interface.
 		 *
 		 * @return Description of the restart strategy
 		 */
 		public abstract String getDescription();
 	}
 
-	final public static class NoRestartStrategyConfiguration extends RestartStrategyConfiguration {
+	/**
+	 * Configuration representing no restart strategy.
+	 */
+	public static final class NoRestartStrategyConfiguration extends RestartStrategyConfiguration {
 		private static final long serialVersionUID = -5894362702943349962L;
 
 		@Override
 		public String getDescription() {
 			return "Restart deactivated.";
 		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			return o instanceof NoRestartStrategyConfiguration;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash();
+		}
 	}
 
-	final public static class FixedDelayRestartStrategyConfiguration extends RestartStrategyConfiguration {
+	/**
+	 * Configuration representing a fixed delay restart strategy.
+	 */
+	public static final class FixedDelayRestartStrategyConfiguration extends RestartStrategyConfiguration {
 		private static final long serialVersionUID = 4149870149673363190L;
 
 		private final int restartAttempts;
-		private final long delayBetweenAttempts;
+		private final Time delayBetweenAttemptsInterval;
 
-		FixedDelayRestartStrategyConfiguration(int restartAttempts, long delayBetweenAttempts) {
+		FixedDelayRestartStrategyConfiguration(int restartAttempts, Time delayBetweenAttemptsInterval) {
 			this.restartAttempts = restartAttempts;
-			this.delayBetweenAttempts = delayBetweenAttempts;
+			this.delayBetweenAttemptsInterval = delayBetweenAttemptsInterval;
 		}
 
 		public int getRestartAttempts() {
 			return restartAttempts;
 		}
 
-		public long getDelayBetweenAttempts() {
-			return delayBetweenAttempts;
+		public Time getDelayBetweenAttemptsInterval() {
+			return delayBetweenAttemptsInterval;
 		}
 
 		@Override
 		public int hashCode() {
-			return 31 * restartAttempts + (int)(delayBetweenAttempts ^ (delayBetweenAttempts >>> 32));
+			int result = restartAttempts;
+			result = 31 * result + (delayBetweenAttemptsInterval != null ? delayBetweenAttemptsInterval.hashCode() : 0);
+			return result;
 		}
 
 		@Override
@@ -105,7 +156,7 @@ public class RestartStrategies {
 			if (obj instanceof FixedDelayRestartStrategyConfiguration) {
 				FixedDelayRestartStrategyConfiguration other = (FixedDelayRestartStrategyConfiguration) obj;
 
-				return restartAttempts == other.restartAttempts && delayBetweenAttempts == other.delayBetweenAttempts;
+				return restartAttempts == other.restartAttempts && delayBetweenAttemptsInterval.equals(other.delayBetweenAttemptsInterval);
 			} else {
 				return false;
 			}
@@ -113,8 +164,89 @@ public class RestartStrategies {
 
 		@Override
 		public String getDescription() {
-			return "Restart with fixed delay (" + delayBetweenAttempts + " ms). #"
+			return "Restart with fixed delay (" + delayBetweenAttemptsInterval + "). #"
 				+ restartAttempts + " restart attempts.";
+		}
+	}
+
+	/**
+	 * Configuration representing a failure rate restart strategy.
+	 */
+	public static final class FailureRateRestartStrategyConfiguration extends RestartStrategyConfiguration {
+		private static final long serialVersionUID = 1195028697539661739L;
+		private final int maxFailureRate;
+
+		private final Time failureInterval;
+		private final Time delayBetweenAttemptsInterval;
+
+		public FailureRateRestartStrategyConfiguration(int maxFailureRate, Time failureInterval, Time delayBetweenAttemptsInterval) {
+			this.maxFailureRate = maxFailureRate;
+			this.failureInterval = failureInterval;
+			this.delayBetweenAttemptsInterval = delayBetweenAttemptsInterval;
+		}
+
+		public int getMaxFailureRate() {
+			return maxFailureRate;
+		}
+
+		public Time getFailureInterval() {
+			return failureInterval;
+		}
+
+		public Time getDelayBetweenAttemptsInterval() {
+			return delayBetweenAttemptsInterval;
+		}
+
+		@Override
+		public String getDescription() {
+			return "Failure rate restart with maximum of " + maxFailureRate + " failures within interval " + failureInterval.toString()
+					+ " and fixed delay " + delayBetweenAttemptsInterval.toString();
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			FailureRateRestartStrategyConfiguration that = (FailureRateRestartStrategyConfiguration) o;
+			return maxFailureRate == that.maxFailureRate &&
+				Objects.equals(failureInterval, that.failureInterval) &&
+				Objects.equals(delayBetweenAttemptsInterval, that.delayBetweenAttemptsInterval);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(maxFailureRate, failureInterval, delayBetweenAttemptsInterval);
+		}
+	}
+
+	/**
+	 * Restart strategy configuration that could be used by jobs to use cluster level restart
+	 * strategy. Useful especially when one has a custom implementation of restart strategy set via
+	 * flink-conf.yaml.
+	 */
+	public static final class FallbackRestartStrategyConfiguration extends RestartStrategyConfiguration {
+		private static final long serialVersionUID = -4441787204284085544L;
+
+		@Override
+		public String getDescription() {
+			return "Cluster level default restart strategy";
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			return o instanceof FallbackRestartStrategyConfiguration;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash();
 		}
 	}
 }

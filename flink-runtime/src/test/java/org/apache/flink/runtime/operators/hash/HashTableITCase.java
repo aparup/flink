@@ -38,7 +38,6 @@ import org.apache.flink.runtime.io.disk.iomanager.IOManagerAsync;
 import org.apache.flink.runtime.jobgraph.tasks.AbstractInvokable;
 import org.apache.flink.runtime.memory.MemoryAllocationException;
 import org.apache.flink.runtime.memory.MemoryManager;
-import org.apache.flink.runtime.operators.hash.MutableHashTable.HashBucketIterator;
 import org.apache.flink.runtime.operators.testutils.DummyInvokable;
 import org.apache.flink.runtime.operators.testutils.UniformIntPairGenerator;
 import org.apache.flink.runtime.operators.testutils.UniformRecordGenerator;
@@ -52,12 +51,13 @@ import org.apache.flink.types.NullKeyFieldException;
 import org.apache.flink.types.Record;
 import org.apache.flink.types.Value;
 import org.apache.flink.util.MutableObjectIterator;
+import org.apache.flink.util.TestLogger;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-public class HashTableITCase {
+public class HashTableITCase extends TestLogger {
 
 	private static final AbstractInvokable MEM_OWNER = new DummyInvokable();
 	
@@ -805,11 +805,8 @@ public class HashTableITCase {
 			return;
 		}
 		
-		// create the I/O access for spilling
-		final IOManager ioManager = new IOManagerAsync();
-		
 		// ----------------------------------------------------------------------------------------
-		
+
 		final MutableHashTable<IntPair, IntPair> join = new MutableHashTable<IntPair, IntPair>(
 			this.pairBuildSideAccesssor, this.pairProbeSideAccesssor, 
 			this.pairBuildSideComparator, this.pairProbeSideComparator, this.pairComparator,
@@ -905,9 +902,6 @@ public class HashTableITCase {
 			fail("Memory for the Join could not be provided.");
 			return;
 		}
-		
-		// create the I/O access for spilling
-		IOManager ioManager = new IOManagerAsync();
 		
 		// create the map for validating the results
 		HashMap<Integer, Long> map = new HashMap<Integer, Long>(NUM_KEYS);
@@ -1020,9 +1014,6 @@ public class HashTableITCase {
 			fail("Memory for the Join could not be provided.");
 			return;
 		}
-		
-		// create the I/O access for spilling
-		IOManager ioManager = new IOManagerAsync();
 		
 		// create the map for validating the results
 		HashMap<Integer, Long> map = new HashMap<Integer, Long>(NUM_KEYS);

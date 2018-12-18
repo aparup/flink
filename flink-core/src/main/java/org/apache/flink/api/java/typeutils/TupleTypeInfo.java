@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.annotation.Public;
 import org.apache.flink.api.common.ExecutionConfig;
@@ -84,11 +86,12 @@ public final class TupleTypeInfo<T extends Tuple> extends TupleTypeInfoBase<T> {
 	@Override
 	@PublicEvolving
 	public int getFieldIndex(String fieldName) {
-		int fieldIndex = Integer.parseInt(fieldName.substring(1));
-		if (fieldIndex >= getArity()) {
-			return -1;
+		for (int i = 0; i < fieldNames.length; i++) {
+			if (fieldNames[i].equals(fieldName)) {
+				return i;
+			}
 		}
-		return fieldIndex;
+		return -1;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -168,7 +171,16 @@ public final class TupleTypeInfo<T extends Tuple> extends TupleTypeInfoBase<T> {
 			);
 		}
 	}
-	
+
+	@Override
+	public Map<String, TypeInformation<?>> getGenericParameters() {
+		Map<String, TypeInformation<?>> m = new HashMap<>(types.length);
+		for (int i = 0; i < types.length; i++) {
+			m.put("T" + i, types[i]);
+		}
+		return m;
+	}
+
 	// --------------------------------------------------------------------------------------------
 	
 	@Override

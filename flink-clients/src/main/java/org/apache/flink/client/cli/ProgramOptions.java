@@ -15,10 +15,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.flink.client.cli;
 
-import org.apache.commons.cli.CommandLine;
 import org.apache.flink.api.common.ExecutionConfig;
+import org.apache.flink.runtime.jobgraph.SavepointRestoreSettings;
+
+import org.apache.commons.cli.CommandLine;
 
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -33,7 +36,8 @@ import static org.apache.flink.client.cli.CliFrontendParser.DETACHED_OPTION;
 import static org.apache.flink.client.cli.CliFrontendParser.JAR_OPTION;
 import static org.apache.flink.client.cli.CliFrontendParser.LOGGING_OPTION;
 import static org.apache.flink.client.cli.CliFrontendParser.PARALLELISM_OPTION;
-import static org.apache.flink.client.cli.CliFrontendParser.SAVEPOINT_PATH_OPTION;
+import static org.apache.flink.client.cli.CliFrontendParser.SHUTDOWN_IF_ATTACHED_OPTION;
+import static org.apache.flink.client.cli.CliFrontendParser.YARN_DETACHED_OPTION;
 
 /**
  * Base class for command line options that refer to a JAR file program.
@@ -54,7 +58,9 @@ public abstract class ProgramOptions extends CommandLineOptions {
 
 	private final boolean detachedMode;
 
-	private final String savepointPath;
+	private final boolean shutdownOnAttachedExit;
+
+	private final SavepointRestoreSettings savepointSettings;
 
 	protected ProgramOptions(CommandLine line) throws CliArgsException {
 		super(line);
@@ -108,13 +114,11 @@ public abstract class ProgramOptions extends CommandLineOptions {
 		}
 
 		stdoutLogging = !line.hasOption(LOGGING_OPTION.getOpt());
-		detachedMode = line.hasOption(DETACHED_OPTION.getOpt());
+		detachedMode = line.hasOption(DETACHED_OPTION.getOpt()) || line.hasOption(
+			YARN_DETACHED_OPTION.getOpt());
+		shutdownOnAttachedExit = line.hasOption(SHUTDOWN_IF_ATTACHED_OPTION.getOpt());
 
-		if (line.hasOption(SAVEPOINT_PATH_OPTION.getOpt())) {
-			savepointPath = line.getOptionValue(SAVEPOINT_PATH_OPTION.getOpt());
-		} else {
-			savepointPath = null;
-		}
+		this.savepointSettings = CliFrontendParser.createSavepointRestoreSettings(line);
 	}
 
 	public String getJarFilePath() {
@@ -145,7 +149,11 @@ public abstract class ProgramOptions extends CommandLineOptions {
 		return detachedMode;
 	}
 
-	public String getSavepointPath() {
-		return savepointPath;
+	public boolean isShutdownOnAttachedExit() {
+		return shutdownOnAttachedExit;
+	}
+
+	public SavepointRestoreSettings getSavepointRestoreSettings() {
+		return savepointSettings;
 	}
 }

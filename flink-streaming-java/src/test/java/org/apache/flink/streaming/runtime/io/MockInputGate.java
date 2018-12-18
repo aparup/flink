@@ -22,73 +22,96 @@ import org.apache.flink.runtime.event.TaskEvent;
 import org.apache.flink.runtime.io.network.api.EndOfPartitionEvent;
 import org.apache.flink.runtime.io.network.partition.consumer.BufferOrEvent;
 import org.apache.flink.runtime.io.network.partition.consumer.InputGate;
-import org.apache.flink.runtime.util.event.EventListener;
+import org.apache.flink.runtime.io.network.partition.consumer.InputGateListener;
 
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.Optional;
 import java.util.Queue;
 
+/**
+ * Mock {@link InputGate}.
+ */
 public class MockInputGate implements InputGate {
 
 	private final int pageSize;
-	
-	private final int numChannels;
-	
-	private final Queue<BufferOrEvent> boes;
+
+	private final int numberOfChannels;
+
+	private final Queue<BufferOrEvent> bufferOrEvents;
 
 	private final boolean[] closed;
-	
+
 	private int closedChannels;
 
-	
-	public MockInputGate(int pageSize, int numChannels, List<BufferOrEvent> boes) {
+	private final String owningTaskName;
+
+	public MockInputGate(int pageSize, int numberOfChannels, List<BufferOrEvent> bufferOrEvents) {
+		this(pageSize, numberOfChannels, bufferOrEvents, "MockTask");
+	}
+
+	public MockInputGate(int pageSize, int numberOfChannels, List<BufferOrEvent> bufferOrEvents, String owningTaskName) {
 		this.pageSize = pageSize;
-		this.numChannels = numChannels;
-		this.boes = new ArrayDeque<BufferOrEvent>(boes);
-		this.closed = new boolean[numChannels];
+		this.numberOfChannels = numberOfChannels;
+		this.bufferOrEvents = new ArrayDeque<BufferOrEvent>(bufferOrEvents);
+		this.closed = new boolean[numberOfChannels];
+		this.owningTaskName = owningTaskName;
 	}
 
 	@Override
 	public int getPageSize() {
 		return pageSize;
 	}
-	
+
 	@Override
 	public int getNumberOfInputChannels() {
-		return numChannels;
+		return numberOfChannels;
+	}
+
+	@Override
+	public String getOwningTaskName() {
+		return owningTaskName;
 	}
 
 	@Override
 	public boolean isFinished() {
-		return boes.isEmpty();
+		return bufferOrEvents.isEmpty();
 	}
 
 	@Override
-	public BufferOrEvent getNextBufferOrEvent() {
-		BufferOrEvent next = boes.poll();
+	public Optional<BufferOrEvent> getNextBufferOrEvent() {
+		BufferOrEvent next = bufferOrEvents.poll();
 		if (next == null) {
-			return null;
+			return Optional.empty();
 		}
-		
+
 		int channelIdx = next.getChannelIndex();
 		if (closed[channelIdx]) {
 			throw new RuntimeException("Inconsistent: Channel " + channelIdx
-					+ " has data even though it is already closed.");
+				+ " has data even though it is already closed.");
 		}
 		if (next.isEvent() && next.getEvent() instanceof EndOfPartitionEvent) {
 			closed[channelIdx] = true;
 			closedChannels++;
 		}
-		return next;
+		return Optional.of(next);
 	}
 
 	@Override
-	public void requestPartitions() {}
+	public Optional<BufferOrEvent> pollNextBufferOrEvent() {
+		return getNextBufferOrEvent();
+	}
 
 	@Override
-	public void sendTaskEvent(TaskEvent event) {}
+	public void requestPartitions() {
+	}
 
 	@Override
-	public void registerListener(EventListener<InputGate> listener) {}
-	
+	public void sendTaskEvent(TaskEvent event) {
+	}
+
+	@Override
+	public void registerListener(InputGateListener listener) {
+	}
+
 }

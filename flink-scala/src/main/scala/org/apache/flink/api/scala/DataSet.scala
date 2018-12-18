@@ -17,13 +17,13 @@
  */
 package org.apache.flink.api.scala
 
-import org.apache.flink.annotation.{PublicEvolving, Public}
+import org.apache.flink.annotation.{Public, PublicEvolving}
 import org.apache.flink.api.common.InvalidProgramException
 import org.apache.flink.api.common.accumulators.SerializedListAccumulator
 import org.apache.flink.api.common.aggregators.Aggregator
 import org.apache.flink.api.common.functions._
 import org.apache.flink.api.common.io.{FileOutputFormat, OutputFormat}
-import org.apache.flink.api.common.operators.{Keys, Order}
+import org.apache.flink.api.common.operators.{Keys, Order, ResourceSpec}
 import org.apache.flink.api.common.operators.base.JoinOperatorBase.JoinHint
 import org.apache.flink.api.common.operators.base.CrossOperatorBase.CrossHint
 import org.apache.flink.api.common.operators.base.PartitionOperatorBase.PartitionMethod
@@ -35,7 +35,8 @@ import org.apache.flink.api.java.io.{PrintingOutputFormat, TextOutputFormat}
 import Keys.ExpressionKeys
 import org.apache.flink.api.java.operators._
 import org.apache.flink.api.java.operators.join.JoinType
-import org.apache.flink.api.java.{DataSet => JavaDataSet, Utils}
+import org.apache.flink.api.java.typeutils.TupleTypeInfoBase
+import org.apache.flink.api.java.{Utils, DataSet => JavaDataSet}
 import org.apache.flink.api.scala.operators.{ScalaAggregateOperator, ScalaCsvOutputFormat}
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.core.fs.{FileSystem, Path}
@@ -176,6 +177,60 @@ class DataSet[T: ClassTag](set: JavaDataSet[T]) {
         "parallelism.")
   }
 
+
+// ---------------------------------------------------------------------------
+//  Fine-grained resource profiles are an incomplete work-in-progress feature
+//  The setters are hence commented out at this point.
+// ---------------------------------------------------------------------------
+//  /**
+//   * Sets the minimum and preferred resources of this operation.
+//   */
+//  @PublicEvolving
+//  def resources(minResources: ResourceSpec, preferredResources: ResourceSpec) : Unit = {
+//    javaSet match {
+//      case ds: DataSource[_] => ds.setResources(minResources, preferredResources)
+//      case op: Operator[_, _] => op.setResources(minResources, preferredResources)
+//      case di: DeltaIterationResultSet[_, _] =>
+//        di.getIterationHead.setResources(minResources, preferredResources)
+//      case _ =>
+//        throw new UnsupportedOperationException("Operator does not support " +
+//          "configuring custom resources specs.")
+//    }
+//    this
+//  }
+//
+//  /**
+//   * Sets the resource of this operation.
+//   */
+//  @PublicEvolving
+//  def resources(resources: ResourceSpec) : Unit = {
+//    this.resources(resources, resources)
+//  }
+
+  /**
+   * Returns the minimum resources of this operation.
+   */
+  @PublicEvolving
+  def minResources: ResourceSpec = javaSet match {
+    case ds: DataSource[_] => ds.getMinResources()
+    case op: Operator[_, _] => op.getMinResources()
+    case _ =>
+      throw new UnsupportedOperationException("Operator does not support " +
+        "configuring custom resources specs.")
+  }
+
+  /**
+   * Returns the preferred resources of this operation.
+   */
+  @PublicEvolving
+  def preferredResources: ResourceSpec = javaSet match {
+    case ds: DataSource[_] => ds.getPreferredResources()
+    case op: Operator[_, _] => op.getPreferredResources()
+    case _ =>
+      throw new UnsupportedOperationException("Operator does not support " +
+        "configuring custom resources specs.")
+  }
+
   /**
    * Registers an [[org.apache.flink.api.common.aggregators.Aggregator]]
    * for the iteration. Aggregators can be used to maintain simple statistics during the
@@ -213,7 +268,7 @@ class DataSet[T: ClassTag](set: JavaDataSet[T]) {
    * The runtime context itself is available in all UDFs via
    * `org.apache.flink.api.common.functions.AbstractRichFunction#getRuntimeContext()`
    *
-   * @param data The data set to be broadcasted.
+   * @param data The data set to be broadcast.
    * @param name The name under which the broadcast data set retrieved.
    * @return The operator itself, to allow chaining function calls.
    */
@@ -227,6 +282,49 @@ class DataSet[T: ClassTag](set: JavaDataSet[T]) {
     this
   }
 
+  /**
+    * Adds semantic information about forwarded fields of the user-defined function.
+    * The forwarded fields information declares fields which are never modified by the function and
+    * which are forwarded to the same position in the output or copied unchanged to another position
+    * in the output.
+    *
+    * <p>Fields that are forwarded to the same position are specified just by their position.
+    * The specified position must be valid for the input and output data type and have
+    * the same type.
+    * For example <code>withForwardedFields("_3")</code> declares that the third field of
+    * an input tuple is copied to the third field of an output tuple.
+    *
+    * <p>Fields which are copied to another position in the output unchanged are declared by
+    * specifying the source field reference in the input and the target field reference
+    * in the output.
+    * {@code withForwardedFields("_1->_3")} denotes that the first field of the input tuple is
+    * copied to the third field of the output tuple unchanged. When using a wildcard ("*") ensure
+    * that the number of declared fields and their types in input and output type match.
+    *
+    * <p>Multiple forwarded fields can be annotated in one
+    * ({@code withForwardedFields("_2; _3->_1; _4")})
+    * or separate Strings ({@code withForwardedFields("_2", "_3->_1", "_4")}).
+    * Please refer to the JavaDoc of {@link org.apache.flink.api.common.functions.Function}
+    * or Flink's documentation for details on field references such as nested fields and wildcard.
+    *
+    * <p>It is not possible to override existing semantic information about forwarded fields
+    * which was for example added by a
+    * {@link org.apache.flink.api.java.functions.FunctionAnnotation.ForwardedFields} class
+    * annotation.
+    *
+    * <p><b>NOTE: Adding semantic information for functions is optional!
+    * If used correctly, semantic information can help the Flink optimizer to generate more
+    * efficient execution plans.
+    * However, incorrect semantic information can cause the optimizer to generate incorrect
+    * execution plans which compute wrong results!
+    * So be careful when adding semantic information.
+    * </b>
+    *
+    * @param forwardedFields A list of field forward expressions.
+    * @return This operator with annotated forwarded field information.
+    * @see org.apache.flink.api.java.functions.FunctionAnnotation
+    * @see org.apache.flink.api.java.functions.FunctionAnnotation.ForwardedFields
+    */
   def withForwardedFields(forwardedFields: String*) = {
     javaSet match {
       case op: SingleInputUdfOperator[_, _, _] => op.withForwardedFields(forwardedFields: _*)
@@ -237,6 +335,52 @@ class DataSet[T: ClassTag](set: JavaDataSet[T]) {
     this
   }
 
+  /**
+    * Adds semantic information about forwarded fields of the first input
+    * of the user-defined function.
+    * The forwarded fields information declares fields which are never modified by the function and
+    * which are forwarded to the same position in the output or copied unchanged
+    * to another position in the output.
+    *
+    * <p>Fields that are forwarded to the same position are specified just by their position.
+    * The specified position must be valid for the input and output data type
+    * and have the same type.
+    * For example <code>withForwardedFieldsFirst("_3")</code> declares that the third field
+    * of an input tuple from the first input is copied to the third field of an output tuple.
+    *
+    * <p>Fields which are copied from the first input to another position in the output unchanged
+    * are declared by specifying the source field reference in the first input and the target field
+    * reference in the output. {@code withForwardedFieldsFirst("_1->_3")} denotes that the first
+    * field of the first input tuple is copied to the third field of the output tuple unchanged.
+    * When using a wildcard ("*") ensure that the number of declared fields and their types
+    * in the first input and output type match.
+    *
+    * <p>Multiple forwarded fields can be annotated in one
+    * ({@code withForwardedFieldsFirst("_2; _3->_0; _4")})
+    * or separate Strings ({@code withForwardedFieldsFirst("_2", "_3->_0", "_4")}).
+    * Please refer to the JavaDoc of
+    * {@link org.apache.flink.api.common.functions.Function} or Flink's documentation for
+    * details on field references such as nested fields and wildcard.
+    *
+    * <p>It is not possible to override existing semantic information about forwarded fields
+    * of the first input which was for example added by a
+    * {@link org.apache.flink.api.java.functions.FunctionAnnotation.ForwardedFieldsFirst}
+    * class annotation.
+    *
+    * <p><b>NOTE: Adding semantic information for functions is optional!
+    * If used correctly, semantic information can help the Flink optimizer to generate more
+    * efficient execution plans.
+    * However, incorrect semantic information can cause the optimizer to generate incorrect
+    * execution plans which compute wrong results!
+    * So be careful when adding semantic information.
+    * </b>
+    *
+    * @param forwardedFields A list of forwarded field expressions for the first input
+    *                        of the function.
+    * @return This operator with annotated forwarded field information.
+    * @see org.apache.flink.api.java.functions.FunctionAnnotation
+    * @see org.apache.flink.api.java.functions.FunctionAnnotation.ForwardedFieldsFirst
+    */
   def withForwardedFieldsFirst(forwardedFields: String*) = {
     javaSet match {
       case op: TwoInputUdfOperator[_, _, _, _] => op.withForwardedFieldsFirst(forwardedFields: _*)
@@ -247,6 +391,53 @@ class DataSet[T: ClassTag](set: JavaDataSet[T]) {
     this
   }
 
+  /**
+    * Adds semantic information about forwarded fields of the second input
+    * of the user-defined function.
+    * The forwarded fields information declares fields which are never modified by the function and
+    * which are forwarded to the same position in the output or copied unchanged
+    * to another position in the output.
+    *
+    * <p>Fields that are forwarded to the same position are specified just by their position.
+    * The specified position must be valid for the input and output data type
+    * and have the same type.
+    * For example <code>withForwardedFieldsFirst("_3")</code> declares that the third field
+    * of an input tuple from the second input is copied to the third field of an output tuple.
+    *
+    * <p>Fields which are copied from the second input to another position
+    * in the output unchanged are declared by specifying the source field reference
+    * in the second input and the target field reference in the output.
+    * {@code withForwardedFieldsFirst("_1->_3")} denotes that the first field of the second input
+    * tuple is copied to the third field of the output tuple unchanged. When using a wildcard ("*")
+    * ensure that the number of declared fields and their types in the second input and
+    * output type match.
+    *
+    * <p>Multiple forwarded fields can be annotated in one
+    * ({@code withForwardedFieldsFirst("_2; _3->_0; _4")})
+    * or separate Strings ({@code withForwardedFieldsFirst("_2", "_3->_0", "_4")}).
+    * Please refer to the JavaDoc of
+    * {@link org.apache.flink.api.common.functions.Function} or Flink's documentation for
+    * details on field references such as nested fields and wildcard.
+    *
+    * <p>It is not possible to override existing semantic information about forwarded fields
+    * of the second input which was for example added by a
+    * {@link org.apache.flink.api.java.functions.FunctionAnnotation.ForwardedFieldsFirst}
+    * class annotation.
+    *
+    * <p><b>NOTE: Adding semantic information for functions is optional!
+    * If used correctly, semantic information can help the Flink optimizer to generate more
+    * efficient execution plans.
+    * However, incorrect semantic information can cause the optimizer to generate incorrect
+    * execution plans which compute wrong results!
+    * So be careful when adding semantic information.
+    * </b>
+    *
+    * @param forwardedFields A list of forwarded field expressions for the second input
+    *                        of the function.
+    * @return This operator with annotated forwarded field information.
+    * @see org.apache.flink.api.java.functions.FunctionAnnotation
+    * @see org.apache.flink.api.java.functions.FunctionAnnotation.ForwardedFieldsFirst
+    */
   def withForwardedFieldsSecond(forwardedFields: String*) = {
     javaSet match {
       case op: TwoInputUdfOperator[_, _, _, _] => op.withForwardedFieldsSecond(forwardedFields: _*)
@@ -262,7 +453,7 @@ class DataSet[T: ClassTag](set: JavaDataSet[T]) {
       case udfOp: UdfOperator[_] => udfOp.withParameters(parameters)
       case source: DataSource[_] => source.withParameters(parameters)
       case _ =>
-        throw new UnsupportedOperationException("Operator " + javaSet.toString 
+        throw new UnsupportedOperationException("Operator " + javaSet.toString
             + " cannot have parameters")
     }
     this
@@ -696,6 +887,62 @@ class DataSet[T: ClassTag](set: JavaDataSet[T]) {
       implicitly[TypeInformation[R]],
       combiner,
       getCallLocationName()))
+  }
+
+  /**
+    * Selects an element with minimum value.
+    *
+    * The minimum is computed over the specified fields in lexicographical order.
+    *
+    * Example 1: Given a data set with elements [0, 1], [1, 0], the
+    * results will be:
+    * {{{
+    *   minBy(0)[0, 1]
+    *   minBy(1)[1, 0]
+    * }}}
+    * Example 2: Given a data set with elements [0, 0], [0, 1], the
+    * results will be:
+    * {{{
+    *   minBy(0, 1)[0, 0]
+    * }}}
+    * If multiple values with minimum value at the specified fields exist, a random one will be
+    * picked.
+    * Internally, this operation is implemented as a [[ReduceFunction]]
+    */
+  def minBy(fields: Int*) : DataSet[T]  = {
+    if (!getType.isTupleType) {
+      throw new InvalidProgramException("DataSet#minBy(int...) only works on Tuple types.")
+    }
+
+    reduce(new SelectByMinFunction[T](getType.asInstanceOf[TupleTypeInfoBase[T]], fields.toArray))
+  }
+
+  /**
+    * Selects an element with maximum value.
+    *
+    * The maximum is computed over the specified fields in lexicographical order.
+    *
+    * Example 1: Given a data set with elements [0, 1], [1, 0], the
+    * results will be:
+    * {{{
+    *   maxBy(0)[1, 0]
+    *   maxBy(1)[0, 1]
+    * }}}
+    * Example 2: Given a data set with elements [0, 0], [0, 1], the
+    * results will be:
+    * {{{
+    *   maxBy(0, 1)[0, 1]
+    * }}}
+    * If multiple values with maximum value at the specified fields exist, a random one will be
+    * picked
+    * Internally, this operation is implemented as a [[ReduceFunction]].
+    *
+    */
+  def maxBy(fields: Int*) : DataSet[T] = {
+    if (!getType.isTupleType) {
+      throw new InvalidProgramException("DataSet#maxBy(int...) only works on Tuple types.")
+    }
+    reduce(new SelectByMaxFunction[T](getType.asInstanceOf[TupleTypeInfoBase[T]], fields.toArray))
   }
 
   /**
@@ -1599,7 +1846,7 @@ class DataSet[T: ClassTag](set: JavaDataSet[T]) {
   def output(outputFormat: OutputFormat[T]): DataSink[T] = {
     javaSet.output(outputFormat)
   }
-  
+
   /**
    * Prints the elements in a DataSet to the standard output stream [[System.out]] of the
    * JVM that calls the print() method. For programs that are executed in a cluster, this
